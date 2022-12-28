@@ -1,0 +1,110 @@
+---
+- name: creating kubernetes cluster using ansible
+  hosts: master,workers
+  become: yes
+  tasks:
+    - name: Disable SELinux
+      selinux:
+        state: stopped
+        enabled: false
+    - name: Disable Firewall
+      service:
+        name: firewalld
+        state: stopped
+        enabled: false
+   
+    - name: Enable Chronyd
+      service:
+        name: chronyd
+        state: started
+    - name: Upgrade all packages
+      dnf:
+        name: "*"
+        state: latest
+
+    - name: Reboot the machine
+      reboot:
+      
+    - name: disable swap
+      command: swapoff -a
+    - name: Commenting Swap entries in /etc/fstab
+      replace:
+        path: /etc/fstab
+        regexp: '(^/.*swap*)'
+        replace: '# \1'
+    - name: Ensure br_netfilter is enabled.
+      modprobe:
+        name: br_netfilter
+        state: present
+
+    - name: update kernel settings
+      sysctl:
+        name: net.bridge.bridge-nf-call-iptables
+        value: 1
+        sysctl_set: yes
+        state: present
+        reload: yes
+    - name: install the yum-utils
+      dnf:
+        name: yum-utils
+        state: latest
+    - name: "Configuring docker-ce repo"
+      get_url:
+        url: "https://download.docker.com/linux/centos/docker-ce.repo"
+        dest: /etc/yum.repos.d/docker-ce.repo
+        mode: 0644
+    - name: " Installing Docker latest version"
+      command: dnf install docker-ce -y --allowerasing
+    - name: "Configaure the daemon.json to add  Docker's cgroup Driver"
+      shell: |
+        mkdir -p /etc/docker /etc/systemd/system/docker.service.d
+        cat > /etc/docker/daemon.json <<EOF
+        {
+        "exec-opts": ["native.cgroupdriver=systemd"],
+        "log-driver": "json-file",
+        "log-opts": {
+        "max-size": "100m"
+        },
+        "storage-driver": "overlay2",
+        "storage-opts": [
+        "overlay2.override_kernel_check=true"
+        ]
+       }
+       EOF
+    - name: "Starting Docker Service"
+      service:
+        name: "docker"
+        state: started
+        enabled: yes
+        daemon_reload: yes
+    - name: Add Kubernetes repository
+      yum_repository:
+        baseurl: https://packages.cloud.google.com/yum/repos/kubernetes-el7-$basearch
+        name: "Kubernetes"
+        state: present
+        description: "Kubernetes Repository"
+        gpgcheck: yes
+        gpgkey: "https://packages.cloud.google.com/yum/doc/yum-key.gpg https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg"
+    - name: "Installing Kubeadm, Kubelet, and Kubectl"
+      dnf:
+        name:
+          - kubectl-1.23.0
+          - kubeadm-1.23.0
+          - kubelet-1.23.0
+        state: present
+    - name: "Starting kubelet Service"
+      service:
+        name: "kubelet"
+        state: started
+        enabled: yes
+
+
+
+
+
+
+
+
+
+        
+    
